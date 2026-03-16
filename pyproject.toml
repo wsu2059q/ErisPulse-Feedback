@@ -1,0 +1,37 @@
+[project]
+name = "ErisPulse-Feedback"
+version = "1.0.0"
+description = "ErisPulse 反馈系统模块"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "wsu2059", email = "wsu2059@qq.com" }
+]
+keywords = [
+    "erispulse",
+    "bot",
+    "feedback",
+    "module",
+    "chatbot"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.entry-points."erispulse.module"]
+"Feedback" = "ErisPulse_Feedback:Main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
