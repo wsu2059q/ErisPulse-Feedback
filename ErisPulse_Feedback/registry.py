@@ -78,6 +78,56 @@ class FeedbackCommandRegistry:
         
         return False, self.templates.build_error("权限不足", "只有管理员可以执行此操作")
     
+    async def _send_status_notification(self, feedback_data: dict, old_status: str, new_status: str, operator_event):
+        # 检查是否有平台信息和源群聊ID
+        source_platform = feedback_data.get("platform")
+        source_group_id = feedback_data.get("source_group_id")
+        
+        if not source_platform or not source_group_id:
+            self.logic.logger.warning(
+                f"无法发送状态变更通知：缺少平台信息或群聊ID "
+                f"(platform={source_platform}, source_group_id={source_group_id})"
+            )
+            return
+        
+        try:
+            # 获取目标平台的适配器
+            adapter = self.logic.sdk.adapter.get(source_platform)
+            
+            if not adapter:
+                self.logic.logger.warning(f"无法获取平台适配器: {source_platform}")
+                return
+            
+            # 生成通知消息
+            operator_nickname = operator_event.get_user_nickname() or "管理员"
+            notification_msg = self.templates.build_status_change_notification(
+                feedback_data, old_status, new_status, operator_nickname
+            )
+            
+            # 根据平台支持的发送方法选择
+            supported_methods = self.logic.sdk.adapter.list_sends(source_platform)
+            
+            # 优先使用 Html，然后 Markdown，最后 Text
+            if "Html" in supported_methods and "html" in notification_msg:
+                await adapter.Send.To("group", source_group_id).Html(notification_msg["html"])
+            elif "Markdown" in supported_methods and "markdown" in notification_msg:
+                await adapter.Send.To("group", source_group_id).Markdown(notification_msg["markdown"])
+            else:
+                # 使用纯文本
+                text = notification_msg.get("text", notification_msg.get("html", notification_msg.get("markdown", "")))
+                await adapter.Send.To("group", source_group_id).Text(text)
+            
+            self.logic.logger.info(
+                f"已发送状态变更通知到 {source_platform} 平台群聊 {source_group_id} "
+                f"(反馈: {feedback_data['id']}, {old_status} -> {new_status})"
+            )
+            
+        except Exception as e:
+            self.logic.logger.error(
+                f"发送状态变更通知失败: {e}",
+                exc_info=True
+            )
+    
     async def register_commands(self):
         
         # ==================== 用户命令 ====================
@@ -161,7 +211,8 @@ class FeedbackCommandRegistry:
                 event.get_user_nickname() or "未知用户",
                 category,
                 content,
-                config
+                config,
+                event.get_platform()
             )
             
             if not success:
@@ -330,10 +381,13 @@ class FeedbackCommandRegistry:
             if confirm_reply and confirm_reply.get_text().lower() in self.confirm_keywords:
                 update_result = feedback_manager.update_feedback_status(feedback_group_id, feedback_id, new_status)
                 if update_result:
-                    old_status, _ = update_result
+                    old_status, feedback_data = update_result
                     # 更新成功，不显示详情
                     msg = self.templates.build_status_update_success(feedback_id, old_status, new_status)
                     await self.send_message(event, msg)
+                    
+                    # 发送通知到原始群聊（跨平台推送）
+                    await self._send_status_notification(feedback_data, old_status, new_status, input_reply)
             else:
                 msg = self.templates.build_cancel()
                 await self.send_message(event, msg)

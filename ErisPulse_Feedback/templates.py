@@ -1508,3 +1508,81 @@ class FeedbackTemplates:
         text = f"导入失败\n\n{error_msg}"
         
         return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_status_change_notification(cls, feedback_data: Dict, old_status: str, 
+                                   new_status: str, operator_nickname: str):
+        old_status_text = cls._get_status_text(old_status)
+        new_status_text = cls._get_status_text(new_status)
+        new_status_color = cls._get_status_color(new_status)
+        
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="padding: 10px; background: rgba(21, 101, 192, 0.1); border-radius: 6px; margin-bottom: 10px;">
+        <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 4px;">📢 反馈状态更新</div>
+        <div style="font-size: 12px; color: #666;">这个反馈有了新进展</div>
+    </div>
+    
+    <div style="margin-bottom: 8px;">
+        <div style="font-size: 13px; margin-bottom: 4px;"><strong>反馈编号:</strong></div>
+        <div style="padding: 6px; background: rgba(21, 101, 192, 0.05); border-radius: 4px; font-size: 14px;">{feedback_data['id']}</div>
+    </div>
+    
+    <div style="margin-bottom: 8px;">
+        <div style="font-size: 13px; margin-bottom: 4px;"><strong>原始内容:</strong></div>
+        <div style="padding: 8px; border: 1px solid #e0e0e0; border-radius: 4px; font-size: 14px;">{feedback_data['content'][:100]}{'...' if len(feedback_data['content']) > 100 else ''}</div>
+    </div>
+    
+    <div style="margin-bottom: 8px;">
+        <div style="font-size: 13px; margin-bottom: 4px;"><strong>状态变更:</strong></div>
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 14px;">
+            <span style="border: 1px solid #e0e0e0; padding: 4px 8px; border-radius: 4px;">{old_status_text}</span>
+            <span style="font-size: 18px;">→</span>
+            <span style="background: {new_status_color}; padding: 4px 8px; border-radius: 4px; font-weight: bold;">{new_status_text}</span>
+        </div>
+    </div>
+    
+    <div style="margin-bottom: 10px;">
+        <div style="font-size: 13px; margin-bottom: 4px;"><strong>操作者:</strong></div>
+        <div style="font-size: 14px;">{operator_nickname}</div>
+    </div>
+    
+    <div style="padding: 8px; background: rgba(76, 175, 80, 0.1); border-radius: 6px; text-align: center;">
+        <div style="color: #2e7d32; font-size: 13px; font-weight: bold;">感谢你的反馈！</div>
+    </div>
+</div>"""
+        
+        markdown = f"""📢 **反馈状态更新**
+
+这个反馈有了新进展
+
+**反馈编号:** {feedback_data['id']}
+
+**原始内容:**
+{feedback_data['content'][:100]}{'...' if len(feedback_data['content']) > 100 else ''}
+
+**状态变更:**
+{old_status_text} → **{new_status_text}**
+
+**操作者:** {operator_nickname}
+
+---
+
+*感谢你的反馈！*"""
+        
+        text = f"""【反馈状态更新】
+这个反馈有了新进展
+
+反馈编号: {feedback_data['id']}
+
+原始内容:
+{feedback_data['content'][:100]}{'...' if len(feedback_data['content']) > 100 else ''}
+
+状态变更:
+{old_status_text} → {new_status_text}
+
+操作者: {operator_nickname}
+
+感谢你的反馈！"""
+        
+        return {"html": html, "markdown": markdown, "text": text}

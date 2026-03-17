@@ -173,7 +173,7 @@ class FeedbackManager:
     
     def submit_feedback(self, feedback_group_id: str, source_group_id: str,
                       user_id: str, nickname: str, category: str, 
-                      content: str, config: Dict) -> Tuple[bool, str]:
+                      content: str, config: Dict, platform: str = "") -> Tuple[bool, str]:
         # 验证类别
         if category not in config.get("categories", []):
             categories = ", ".join(config["categories"])
@@ -187,6 +187,7 @@ class FeedbackManager:
             "id": feedback_id,
             "group_id": feedback_group_id,
             "source_group_id": source_group_id,
+            "platform": platform,
             "user_id": user_id,
             "user_nickname": nickname,
             "category": category,
@@ -305,6 +306,7 @@ class FeedbackManager:
                 "id": feedback_data["id"],
                 "group_id": feedback_group_id,
                 "source_group_id": feedback_data.get("source_group_id", ""),
+                "platform": feedback_data.get("platform", ""),
                 "user_id": feedback_data["user_id"],
                 "user_nickname": feedback_data["user_nickname"],
                 "category": feedback_data["category"],
