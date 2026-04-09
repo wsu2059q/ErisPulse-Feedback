@@ -9,14 +9,16 @@ class FeedbackTemplates:
     STATUS_MAP = {
         "pending": "待处理",
         "processing": "处理中",
-        "completed": "已完成"
+        "completed": "已完成",
+        "rejected": "搁置"
     }
     
     # 固定的状态颜色
     STATUS_COLORS = {
         "pending": "rgba(255, 167, 38, 0.2)",
         "processing": "rgba(33, 150, 243, 0.2)",
-        "completed": "rgba(76, 175, 80, 0.2)"
+        "completed": "rgba(76, 175, 80, 0.2)",
+        "rejected": "rgba(158, 158, 158, 0.2)"
     }
     
     # 固定的类别颜色
@@ -133,6 +135,53 @@ class FeedbackTemplates:
 组名: {group_name}
 
 所有反馈数据已删除"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_exit_confirm(cls, group_name: str, group_id: str):
+        """构建退出反馈组确认消息"""
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="color: #e65100; font-size: 14px; font-weight: bold; margin-bottom: 8px;">确认退出反馈组</div>
+    <div style="font-size: 13px; margin-bottom: 8px;">
+        确认要退出反馈组 <strong>{group_name}</strong> ({group_id}) 吗？
+    </div>
+    <div style="font-size: 12px;">回复 '是' 或 '否' (30秒内有效)</div>
+</div>"""
+        
+        markdown = f"""**确认退出反馈组**
+
+确认要退出反馈组 **{group_name}** ({group_id}) 吗？
+
+回复 '是' 或 '否' (30秒内有效)"""
+        
+        text = f"""确认退出反馈组
+
+确认要退出反馈组 {group_name} ({group_id}) 吗？
+
+回复 '是' 或 '否' (30秒内有效)"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_group_exited(cls, group_name: str, group_id: str):
+        """构建退出成功消息"""
+        html = f"""
+<div style="padding: 16px; border-radius: 8px; text-align: center;">
+    <div style="color: #2e7d32; font-size: 16px; font-weight: bold; margin-bottom: 12px;">已退出反馈组</div>
+    <div style="font-size: 14px; margin-bottom: 8px;">
+        已退出反馈组: {group_name} ({group_id})
+    </div>
+</div>"""
+        
+        markdown = f"""**已退出反馈组**
+
+已退出反馈组: {group_name} ({group_id})"""
+        
+        text = f"""已退出反馈组
+
+已退出反馈组: {group_name} ({group_id})"""
         
         return {"html": html, "markdown": markdown, "text": text}
     
@@ -523,7 +572,8 @@ class FeedbackTemplates:
         status_feedbacks = {
             "pending": [],
             "processing": [],
-            "completed": []
+            "completed": [],
+            "rejected": []
         }
         
         for feedback in feedbacks:
@@ -924,7 +974,7 @@ class FeedbackTemplates:
     @classmethod
     def build_status_selection(cls):
         """构建状态选择提示"""
-        status_menu = "1. 待处理\n2. 处理中\n3. 已完成"
+        status_menu = "1. 待处理\n2. 处理中\n3. 已完成\n4. 搁置"
         
         html = f"""
 <div style="padding: 12px; border-radius: 8px;">
@@ -1054,8 +1104,9 @@ class FeedbackTemplates:
     # ==================== 交互式管理命令模板 ====================
     
     @classmethod
-    def build_manage_menu(cls, has_group: bool, group_name: str = None):
+    def build_manage_menu(cls, has_group: bool, group_name: Optional[str] = None):
         """构建管理菜单"""
+        display_name = group_name if group_name else "无"
         html = f"""
 <div style="padding: 12px; border-radius: 8px;">
     <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">设置反馈组</div>
@@ -1076,7 +1127,8 @@ class FeedbackTemplates:
         2. 加入现有反馈组
         3. 查看反馈组信息
         4. 配置反馈组
-        5. 解散反馈组
+        5. 退出反馈组
+        6. 解散反馈组
     </div>
     <div style="font-size: 12px; margin-top: 8px;">回复序号选择操作（60秒内有效）</div>
 </div>"""
@@ -1095,6 +1147,8 @@ class FeedbackTemplates:
 2. 加入现有反馈组
 3. 查看反馈组信息
 4. 配置反馈组
+5. 退出反馈组
+6. 解散反馈组
 
 回复序号选择操作（60秒内有效）"""
         
@@ -1112,6 +1166,8 @@ class FeedbackTemplates:
 2. 加入现有反馈组
 3. 查看反馈组信息
 4. 配置反馈组
+5. 退出反馈组
+6. 解散反馈组
 
 回复序号选择操作（60秒内有效）"""
         
@@ -1153,12 +1209,19 @@ class FeedbackTemplates:
     def build_config_menu(cls, group_data: Dict):
         """构建配置菜单"""
         config = group_data["config"]
+        creator_id = group_data.get("creator_id", "")
+        admin_ids = group_data.get("admin_ids", [])
+        maintainer_ids = group_data.get("maintainer_ids", [])
+        
         html = f"""
 <div style="padding: 12px; border-radius: 8px;">
     <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">配置反馈组</div>
     
     <div style="padding: 10px; background: rgba(21, 101, 192, 0.05); border-radius: 6px; margin-bottom: 12px;">
         <div style="color: #1565c0; font-size: 13px; margin-bottom: 4px;">反馈组: {group_data['name']}</div>
+        <div style="font-size: 12px; color: #666;">创建者: {creator_id}</div>
+        <div style="font-size: 12px; color: #666;">管理员: {len(admin_ids)}人</div>
+        <div style="font-size: 12px; color: #666;">维护者: {len(maintainer_ids)}人</div>
     </div>
     
     <div style="font-size: 13px; margin-bottom: 8px;">请选择要配置的项：</div>
@@ -1167,6 +1230,7 @@ class FeedbackTemplates:
         2. 超时时间 (当前: {config.get('timeout', 60)}秒)
         3. 内容最大长度 (当前: {config.get('max_content_length', 500)}字)
         4. 反馈ID前缀 (当前: {config.get('id_prefix', '#')})
+        5. 成员管理（添加/移除管理员或维护者）
     </div>
     <div style="font-size: 12px; margin-top: 8px;">回复序号选择要配置的项（60秒内有效）</div>
 </div>"""
@@ -1174,6 +1238,9 @@ class FeedbackTemplates:
         markdown = f"""**配置反馈组**
 
 反馈组: {group_data['name']}
+创建者: {creator_id}
+管理员: {len(admin_ids)}人
+维护者: {len(maintainer_ids)}人
 
 请选择要配置的项：
 
@@ -1181,12 +1248,16 @@ class FeedbackTemplates:
 2. 超时时间 (当前: {config.get('timeout', 60)}秒)
 3. 内容最大长度 (当前: {config.get('max_content_length', 500)}字)
 4. 反馈ID前缀 (当前: {config.get('id_prefix', '#')})
+5. 成员管理（添加/移除管理员或维护者）
 
 回复序号选择要配置的项（60秒内有效）"""
         
         text = f"""配置反馈组
 
 反馈组: {group_data['name']}
+创建者: {creator_id}
+管理员: {len(admin_ids)}人
+维护者: {len(maintainer_ids)}人
 
 请选择要配置的项：
 
@@ -1194,8 +1265,208 @@ class FeedbackTemplates:
 2. 超时时间 (当前: {config.get('timeout', 60)}秒)
 3. 内容最大长度 (当前: {config.get('max_content_length', 500)}字)
 4. 反馈ID前缀 (当前: {config.get('id_prefix', '#')})
+5. 成员管理（添加/移除管理员或维护者）
 
 回复序号选择要配置的项（60秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_member_management_menu(cls):
+        """构建成员管理菜单"""
+        html = """
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">成员管理</div>
+    
+    <div style="font-size: 13px; margin-bottom: 8px;">请选择操作：</div>
+    <div style="font-size: 13px; border: 1px solid #e0e0e0; padding: 10px; border-radius: 6px;">
+        1. 添加管理员
+        2. 移除管理员
+        3. 添加维护者
+        4. 移除维护者
+        5. 查看成员列表
+    </div>
+    <div style="font-size: 12px; margin-top: 8px;">回复序号选择操作（60秒内有效）</div>
+</div>"""
+        
+        markdown = """**成员管理**
+
+请选择操作：
+
+1. 添加管理员
+2. 移除管理员
+3. 添加维护者
+4. 移除维护者
+5. 查看成员列表
+
+回复序号选择操作（60秒内有效）"""
+        
+        text = """成员管理
+
+请选择操作：
+
+1. 添加管理员
+2. 移除管理员
+3. 添加维护者
+4. 移除维护者
+5. 查看成员列表
+
+回复序号选择操作（60秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_member_list(cls, group_data: Dict):
+        """构建成员列表"""
+        creator_id = group_data.get("creator_id", "无")
+        admin_ids = group_data.get("admin_ids", [])
+        maintainer_ids = group_data.get("maintainer_ids", [])
+        
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">成员列表</div>
+    
+    <div style="margin-bottom: 10px; padding: 10px; background: rgba(183, 28, 28, 0.1); border-radius: 6px;">
+        <div style="font-size: 13px; font-weight: bold; margin-bottom: 4px;">创建者</div>
+        <div style="font-size: 14px;">{creator_id}</div>
+    </div>
+    
+    <div style="margin-bottom: 10px; padding: 10px; background: rgba(21, 101, 192, 0.1); border-radius: 6px;">
+        <div style="font-size: 13px; font-weight: bold; margin-bottom: 4px;">管理员 ({len(admin_ids)}人)</div>
+        {"<br>".join([f'<div style="font-size: 14px;">{aid}</div>' for aid in admin_ids]) if admin_ids else '<div style="font-size: 14px; color: #666;">无</div>'}
+    </div>
+    
+    <div style="margin-bottom: 10px; padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 6px;">
+        <div style="font-size: 13px; font-weight: bold; margin-bottom: 4px;">维护者 ({len(maintainer_ids)}人)</div>
+        {"<br>".join([f'<div style="font-size: 14px;">{mid}</div>' for mid in maintainer_ids]) if maintainer_ids else '<div style="font-size: 14px; color: #666;">无</div>'}
+    </div>
+</div>"""
+        
+        admin_list = "\n".join([f"- {aid}" for aid in admin_ids]) if admin_ids else "无"
+        maintainer_list = "\n".join([f"- {mid}" for mid in maintainer_ids]) if maintainer_ids else "无"
+        
+        markdown = f"""**成员列表**
+
+**创建者**
+{creator_id}
+
+**管理员** ({len(admin_ids)}人)
+{admin_list}
+
+**维护者** ({len(maintainer_ids)}人)
+{maintainer_list}"""
+        
+        text = f"""成员列表
+
+创建者
+{creator_id}
+
+管理员 ({len(admin_ids)}人)
+{admin_list}
+
+维护者 ({len(maintainer_ids)}人)
+{maintainer_list}"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_add_member_prompt(cls, member_type: str):
+        """构建添加成员输入提示"""
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="color: #1565c0; font-size: 14px; font-weight: bold; margin-bottom: 8px;">添加{member_type}</div>
+    <div style="font-size: 13px; margin-bottom: 8px;">请输入要添加的用户ID：</div>
+    <div style="font-size: 12px;">回复取消可终止操作（60秒内有效）</div>
+</div>"""
+        
+        markdown = f"""**添加{member_type}**
+
+请输入要添加的用户ID：
+
+回复取消可终止操作（60秒内有效）"""
+        
+        text = f"""添加{member_type}
+
+请输入要添加的用户ID：
+
+回复取消可终止操作（60秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_remove_member_prompt(cls, member_type: str, members: List[str]):
+        """构建移除成员选择提示"""
+        items_html = ""
+        for i, mid in enumerate(members, 1):
+            items_html += f'<div style="padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 6px;">{i}. {mid}</div>'
+        
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="color: #b71c1c; font-size: 14px; font-weight: bold; margin-bottom: 8px;">移除{member_type}</div>
+    <div style="font-size: 13px; margin-bottom: 8px;">请选择要移除的用户（输入序号）：</div>
+    {items_html if items_html else '<div style="font-size: 13px; color: #666;">无{member_type}可移除</div>'}
+    <div style="font-size: 12px; margin-top: 8px;">回复序号选择（60秒内有效）</div>
+</div>"""
+        
+        md_items = "\n".join([f"{i}. {mid}" for i, mid in enumerate(members, 1)]) if members else f"无{member_type}可移除"
+        
+        markdown = f"""**移除{member_type}**
+
+请选择要移除的用户（输入序号）：
+
+{md_items}
+
+回复序号选择（60秒内有效）"""
+        
+        text = f"""移除{member_type}
+
+请选择要移除的用户（输入序号）：
+
+{md_items}
+
+回复序号选择（60秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_member_added(cls, member_type: str, user_id: str):
+        """构建成员添加成功消息"""
+        html = f"""
+<div style="padding: 16px; border-radius: 8px; text-align: center;">
+    <div style="color: #2e7d32; font-size: 16px; font-weight: bold; margin-bottom: 12px;">成功添加{member_type}</div>
+    <div style="font-size: 14px;">
+        用户ID: {user_id}
+    </div>
+</div>"""
+        
+        markdown = f"""**成功添加{member_type}**
+
+用户ID: {user_id}"""
+        
+        text = f"""成功添加{member_type}
+
+用户ID: {user_id}"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_member_removed(cls, member_type: str, user_id: str):
+        """构建成员移除成功消息"""
+        html = f"""
+<div style="padding: 16px; border-radius: 8px; text-align: center;">
+    <div style="color: #2e7d32; font-size: 16px; font-weight: bold; margin-bottom: 12px;">成功移除{member_type}</div>
+    <div style="font-size: 14px;">
+        用户ID: {user_id}
+    </div>
+</div>"""
+        
+        markdown = f"""**成功移除{member_type}**
+
+用户ID: {user_id}"""
+        
+        text = f"""成功移除{member_type}
+
+用户ID: {user_id}"""
         
         return {"html": html, "markdown": markdown, "text": text}
     
@@ -1285,7 +1556,8 @@ class FeedbackTemplates:
         <div style="font-size: 13px; margin-top: 4px;">
             <span style="background: rgba(255, 167, 38, 0.15); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">待处理</span>
             <span style="background: rgba(33, 150, 243, 0.15); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">处理中</span>
-            <span style="background: rgba(76, 175, 80, 0.15); padding: 2px 6px; border-radius: 4px;">已完成</span>
+            <span style="background: rgba(76, 175, 80, 0.15); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">已完成</span>
+            <span style="background: rgba(158, 158, 158, 0.15); padding: 2px 6px; border-radius: 4px;">搁置</span>
         </div>
     </div>
 </div>"""
@@ -1309,8 +1581,8 @@ class FeedbackTemplates:
 **支持的类别**
 {categories_text}
 
-**支持的状态**
-待处理 | 处理中 | 已完成"""
+        **支持的状态**
+        待处理 | 处理中 | 已完成 | 搁置"""
         
         text = f"""提交反馈
 用法: /{commands['submit']}
@@ -1331,8 +1603,8 @@ class FeedbackTemplates:
 支持的类别
 {categories_text}
 
-支持的状态
-待处理 | 处理中 | 已完成"""
+        支持的状态
+        待处理 | 处理中 | 已完成 | 搁置"""
         
         return {"html": html, "markdown": markdown, "text": text}
     
@@ -1583,6 +1855,200 @@ class FeedbackTemplates:
 
 操作者: {operator_nickname}
 
-感谢你的反馈！"""
+        感谢你的反馈！"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_user_feedback_list(cls, feedbacks: List[Dict]):
+        """构建用户的反馈列表"""
+        items_html = ""
+        for i, fb in enumerate(feedbacks, 1):
+            status_text = cls._get_status_text(fb["status"])
+            status_bg = cls._get_status_color(fb["status"])
+            time_str = cls._format_time(fb["timestamp"])
+            content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
+            
+            items_html += f"""
+<div style="padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <span style="font-weight: bold; font-size: 14px;">{i}. {fb['id']}</span>
+        <span style="padding: 2px 8px; background: {status_bg}; font-size: 12px; border-radius: 4px;">{status_text}</span>
+    </div>
+    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">类别: {fb['category']} | {time_str}</div>
+    <div style="font-size: 13px;">{content_preview}</div>
+</div>"""
+        
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">我的反馈</div>
+    <div style="font-size: 13px; margin-bottom: 10px;">请选择要编辑的反馈（输入序号）：</div>
+    {items_html}
+    <div style="font-size: 12px; margin-top: 8px;">回复序号选择反馈（60秒内有效）</div>
+</div>"""
+        
+        md_items = ""
+        for i, fb in enumerate(feedbacks, 1):
+            status_text = cls._get_status_text(fb["status"])
+            content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
+            md_items += f"{i}. **{fb['id']}** - {fb['category']} | {status_text}\n   {content_preview}\n\n"
+        
+        markdown = f"""**我的反馈**
+
+请选择要编辑的反馈（输入序号）：
+
+{md_items}回复序号选择反馈（60秒内有效）"""
+        
+        text_items = ""
+        for i, fb in enumerate(feedbacks, 1):
+            status_text = cls._get_status_text(fb["status"])
+            content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
+            text_items += f"{i}. {fb['id']} - {fb['category']} | {status_text}\n   {content_preview}\n\n"
+        
+        text = f"""我的反馈
+
+请选择要编辑的反馈（输入序号）：
+
+{text_items}回复序号选择反馈（60秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_feedback_detail_for_edit(cls, feedback_data: Dict):
+        """构建用于编辑的反馈详情"""
+        time_str = cls._format_time(feedback_data["timestamp"])
+        current_status = feedback_data["status"]
+        current_status_text = cls._get_status_text(current_status)
+        status_bg = cls._get_status_color(current_status)
+        category_bg = cls._get_category_color(feedback_data["category"])
+        
+        html = f"""
+<div style="padding: 12px; border-radius: 8px; margin-bottom: 10px;">
+    <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">反馈详情</div>
+    
+    <div style="border: 1px solid #e0e0e0; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 8px; gap: 8px;">
+            <div>
+                <strong style="font-size: 14px;">{feedback_data['user_nickname']}</strong>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <small style="font-size: 12px;">ID: {feedback_data['user_id']}</small>
+                <small style="font-size: 12px;">{time_str}</small>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+            <div style="padding: 4px 8px; background-color: {category_bg}; font-size: 12px; border-radius: 4px;">
+                {feedback_data['category']}
+            </div>
+            <div style="padding: 4px 8px; background-color: {status_bg}; font-size: 12px; border-radius: 4px;">
+                {current_status_text}
+            </div>
+        </div>
+
+        <div style="font-size: 12px; margin-bottom: 6px;">{feedback_data['id']}</div>
+        <div style="line-height: 1.6; font-size: 14px; border: 1px solid #e0e0e0; padding: 10px; border-radius: 4px;">
+            {feedback_data['content']}
+        </div>
+    </div>
+</div>"""
+        
+        markdown = f"""**反馈详情**
+
+**{feedback_data['user_nickname']}** (ID: {feedback_data['user_id']}) - {time_str}
+
+**反馈ID:** {feedback_data['id']}
+**类别:** {feedback_data['category']}
+**状态:** {current_status_text}
+
+**内容:**
+{feedback_data['content']}"""
+        
+        text = f"""反馈详情
+
+{feedback_data['user_nickname']} (ID: {feedback_data['user_id']}) - {time_str}
+
+反馈ID: {feedback_data['id']}
+类别: {feedback_data['category']}
+状态: {current_status_text}
+
+内容:
+{feedback_data['content']}"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_edit_choice(cls):
+        """构建编辑选择菜单"""
+        html = """
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="font-size: 13px; margin-bottom: 8px;">请选择要编辑的内容：</div>
+    <div style="font-size: 13px; border: 1px solid #e0e0e0; padding: 10px; border-radius: 6px;">
+        1. 类别和内容（一起修改）
+        2. 仅修改内容
+    </div>
+    <div style="font-size: 12px; margin-top: 8px;">回复序号选择（60秒内有效）</div>
+</div>"""
+        
+        markdown = """请选择要编辑的内容：
+
+1. 类别和内容（一起修改）
+2. 仅修改内容
+
+回复序号选择（60秒内有效）"""
+        
+        text = """请选择要编辑的内容：
+
+1. 类别和内容（一起修改）
+2. 仅修改内容
+
+回复序号选择（60秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_edit_content_prompt(cls, current_content: str = ""):
+        """构建编辑内容提示"""
+        html = f"""
+<div style="padding: 12px; border-radius: 8px;">
+    <div style="font-size: 13px; margin-bottom: 8px;">请输入新的反馈内容：</div>
+    <div style="font-size: 12px; margin-bottom: 8px; color: #666;">当前内容预览：{current_content[:100]}{'...' if len(current_content) > 100 else ''}</div>
+    <div style="font-size: 12px;">回复取消可终止编辑（120秒内有效）</div>
+</div>"""
+        
+        markdown = f"""请输入新的反馈内容：
+
+当前内容预览：
+{current_content[:100]}{'...' if len(current_content) > 100 else ''}
+
+回复取消可终止编辑（120秒内有效）"""
+        
+        text = f"""请输入新的反馈内容：
+
+当前内容预览：
+{current_content[:100]}{'...' if len(current_content) > 100 else ''}
+
+回复取消可终止编辑（120秒内有效）"""
+        
+        return {"html": html, "markdown": markdown, "text": text}
+    
+    @classmethod
+    def build_edit_success(cls, feedback_id: str):
+        """构建编辑成功消息"""
+        html = f"""
+<div style="padding: 16px; border-radius: 8px; text-align: center;">
+    <div style="color: #2e7d32; font-size: 16px; font-weight: bold; margin-bottom: 12px;">反馈已更新</div>
+    <div style="font-size: 14px;">
+        反馈编号: {feedback_id}
+    </div>
+</div>"""
+        
+        markdown = f"""**反馈已更新**
+
+反馈编号: {feedback_id}"""
+        
+        text = f"""反馈已更新
+
+反馈编号: {feedback_id}"""
         
         return {"html": html, "markdown": markdown, "text": text}

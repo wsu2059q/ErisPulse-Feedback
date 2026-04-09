@@ -11,7 +11,7 @@ class FeedbackCommandRegistry:
         self.quick_selection_items = {}
         
         # 从配置获取命令
-        config_commands = self.logic.config.get("commands", ["提交反馈", "反馈列表", "修改状态", "反馈帮助", "设置反馈组", "导出数据", "导入数据"])
+        config_commands = self.logic.config.get("commands", ["提交反馈", "反馈列表", "修改状态", "反馈帮助", "设置反馈组", "导出数据", "导入数据", "编辑反馈"])
         self.commands = {
             "submit": config_commands[0],
             "list": config_commands[1],
@@ -19,7 +19,8 @@ class FeedbackCommandRegistry:
             "help": config_commands[3],
             "manage": config_commands[4],
             "export": config_commands[5] if len(config_commands) > 5 else "导出数据",
-            "import": config_commands[6] if len(config_commands) > 6 else "导入数据"
+            "import": config_commands[6] if len(config_commands) > 6 else "导入数据",
+            "edit": config_commands[7] if len(config_commands) > 7 else "编辑反馈"
         }
         
         # 固定的关键词
@@ -33,7 +34,9 @@ class FeedbackCommandRegistry:
             "2": "processing",
             "处理中": "processing",
             "3": "completed",
-            "已完成": "completed"
+            "已完成": "completed",
+            "4": "rejected",
+            "搁置": "rejected"
         }
     
     async def send_message(self, event, message_dict, fallback="html"):
@@ -330,11 +333,9 @@ class FeedbackCommandRegistry:
                 await self.send_message(event, msg)
                 return
             
-            # 验证权限
-            if not (user_id == feedback_data["user_id"] or 
-                    self.logic.is_group_admin(group_data, user_id) or 
-                    self.logic.is_global_admin(user_id)):
-                msg = self.templates.build_error("权限不足", "仅提交者或管理员可修改")
+            # 验证权限 - 维护者及以上可以修改状态
+            if not self.logic.can_modify_status(group_data, user_id):
+                msg = self.templates.build_error("权限不足", "仅提交者、维护者、管理员或创建者可修改状态")
                 await self.send_message(event, msg)
                 return
             
@@ -357,7 +358,7 @@ class FeedbackCommandRegistry:
             
             # 解析状态选择
             new_status = self.status_map.get(status_input)
-            if not new_status or new_status not in ["pending", "processing", "completed"]:
+            if not new_status or new_status not in ["pending", "processing", "completed", "rejected"]:
                 msg = self.templates.build_error("无效的状态", f"请重新使用 /{self.commands['status']} 命令操作")
                 await self.send_message(event, msg)
                 return
@@ -437,12 +438,16 @@ class FeedbackCommandRegistry:
             elif choice == "4":
                 await self._handle_configure_group(event, user_id, source_group_id)
             
-            # 操作5: 解散反馈组
+            # 操作5: 退出反馈组
             elif choice == "5":
+                await self._handle_exit_group(event, user_id, source_group_id)
+            
+            # 操作6: 解散反馈组
+            elif choice == "6":
                 await self._handle_dissolve_group(event, user_id, source_group_id)
             
             else:
-                msg = self.templates.build_error("无效的选择", "请输入1-5的数字")
+                msg = self.templates.build_error("无效的选择", "请输入1-6的数字")
                 await self.send_message(event, msg)
         
         @command(self.commands["export"], help="导出反馈数据")
@@ -610,6 +615,406 @@ JSON 数据
                 msg = self.templates.build_cancel()
                 await self.send_message(event, msg)
         
+        @command(self.commands["edit"], help="编辑自己的反馈")
+        async def edit_feedback_command(event):
+            user_id = event.get_user_id()
+            
+            # 检查群聊是否有反馈组
+            group_data, error_msg = self._check_group(event.get_group_id())
+            if error_msg:
+                await self.send_message(event, error_msg)
+                return
+            
+            config = self._get_group_config(group_data)
+            feedback_group_id = group_data["id"]
+            feedback_manager = self.logic.get_feedback_manager(feedback_group_id)
+            
+            # 获取当前用户提交的反馈
+            all_feedbacks = feedback_manager.list_all_feedbacks(feedback_group_id)
+            user_feedbacks = [f for f in all_feedbacks if f["user_id"] == user_id]
+            
+            if not user_feedbacks:
+                msg = self.templates.build_error("无反馈", "你还没有提交过任何反馈")
+                await self.send_message(event, msg)
+                return
+            
+            # 显示用户的反馈列表
+            msg = self.templates.build_user_feedback_list(user_feedbacks)
+            await self.send_message(event, msg)
+            
+            # 等待用户选择反馈
+            reply = await event.wait_reply(timeout=config["timeout"])
+            if not reply:
+                msg = self.templates.build_timeout("操作超时，已取消操作")
+                await self.send_message(event, msg)
+                return
+            
+            # 解析输入 - 支持序号或ID
+            feedback_id = None
+            try:
+                index = int(reply.get_text().strip()) - 1
+                if 0 <= index < len(user_feedbacks):
+                    feedback_id = user_feedbacks[index]["id"]
+            except ValueError:
+                feedback_id = reply.get_text().strip()
+            
+            if not feedback_id:
+                msg = self.templates.build_error("无效的输入", "请输入有效的反馈编号")
+                await self.send_message(event, msg)
+                return
+            
+            # 获取反馈详情
+            feedback_data = feedback_manager.get_feedback(feedback_group_id, feedback_id)
+            if not feedback_data:
+                msg = self.templates.build_error("找不到反馈", f"反馈编号 {feedback_id} 不存在")
+                await self.send_message(event, msg)
+                return
+            
+            # 检查权限（只能编辑自己的反馈）
+            if feedback_data["user_id"] != user_id:
+                msg = self.templates.build_error("权限不足", "只能编辑自己提交的反馈")
+                await self.send_message(event, msg)
+                return
+            
+            # 检查反馈状态（只能编辑待处理的反馈）
+            if feedback_data["status"] != "pending":
+                msg = self.templates.build_error("状态限制", "只能编辑待处理状态的反馈")
+                await self.send_message(event, msg)
+                return
+            
+            # 显示当前反馈详情
+            msg = self.templates.build_feedback_detail_for_edit(feedback_data)
+            await self.send_message(event, msg)
+            
+            # 询问要编辑什么
+            msg = self.templates.build_edit_choice()
+            await self.send_message(event, msg)
+            
+            # 等待用户选择
+            choice_reply = await event.wait_reply(timeout=config["timeout"])
+            if not choice_reply:
+                msg = self.templates.build_timeout("操作超时，已取消操作")
+                await self.send_message(event, msg)
+                return
+            
+            choice = choice_reply.get_text().strip()
+            
+            # 类别编辑（只有管理员能改类别）
+            if choice == "1":
+                if not self.logic.can_edit_feedback(group_data, user_id, feedback_data):
+                    # 普通用户只能修改内容
+                    msg = self.templates.build_edit_content_prompt(feedback_data["content"])
+                    await self.send_message(event, msg)
+                    
+                    content_reply = await event.wait_reply(timeout=120)
+                    if not content_reply:
+                        msg = self.templates.build_timeout("操作超时，已取消操作")
+                        await self.send_message(event, msg)
+                        return
+                    
+                    new_content = content_reply.get_text().strip()
+                    if new_content.lower() in self.cancel_keywords:
+                        msg = self.templates.build_cancel()
+                        await self.send_message(event, msg)
+                        return
+                    
+                    if len(new_content) > config["max_content_length"]:
+                        msg = self.templates.build_error("内容过长", f"反馈内容不能超过{config['max_content_length']}字")
+                        await self.send_message(event, msg)
+                        return
+                    
+                    # 更新内容
+                    feedback_manager.update_feedback(feedback_group_id, feedback_id, {"content": new_content})
+                    msg = self.templates.build_edit_success(feedback_id)
+                    await self.send_message(event, msg)
+                else:
+                    # 管理员可以编辑类别和内容
+                    msg = self.templates.build_category_selection(config["categories"])
+                    await self.send_message(event, msg)
+                    
+                    category_reply = await event.wait_reply(timeout=config["timeout"])
+                    if not category_reply:
+                        msg = self.templates.build_timeout("操作超时，已取消操作")
+                        await self.send_message(event, msg)
+                        return
+                    
+                    category_input = category_reply.get_text().strip()
+                    category = None
+                    try:
+                        index = int(category_input) - 1
+                        if 0 <= index < len(config["categories"]):
+                            category = config["categories"][index]
+                    except ValueError:
+                        if category_input in config["categories"]:
+                            category = category_input
+                    
+                    if not category:
+                        msg = self.templates.build_error("无效的类别", "请重新使用 /编辑反馈 命令")
+                        await self.send_message(event, msg)
+                        return
+                    
+                    # 然后编辑内容
+                    msg = self.templates.build_edit_content_prompt(feedback_data["content"])
+                    await self.send_message(event, msg)
+                    
+                    content_reply = await event.wait_reply(timeout=120)
+                    if not content_reply:
+                        msg = self.templates.build_timeout("操作超时，已取消操作")
+                        await self.send_message(event, msg)
+                        return
+                    
+                    new_content = content_reply.get_text().strip()
+                    if new_content.lower() in self.cancel_keywords:
+                        msg = self.templates.build_cancel()
+                        await self.send_message(event, msg)
+                        return
+                    
+                    if len(new_content) > config["max_content_length"]:
+                        msg = self.templates.build_error("内容过长", f"反馈内容不能超过{config['max_content_length']}字")
+                        await self.send_message(event, msg)
+                        return
+                    
+                    feedback_manager.update_feedback(feedback_group_id, feedback_id, {"category": category, "content": new_content})
+                    msg = self.templates.build_edit_success(feedback_id)
+                    await self.send_message(event, msg)
+            
+            # 仅编辑内容
+            elif choice == "2":
+                msg = self.templates.build_edit_content_prompt(feedback_data["content"])
+                await self.send_message(event, msg)
+                
+                content_reply = await event.wait_reply(timeout=120)
+                if not content_reply:
+                    msg = self.templates.build_timeout("操作超时，已取消操作")
+                    await self.send_message(event, msg)
+                    return
+                
+                new_content = content_reply.get_text().strip()
+                if new_content.lower() in self.cancel_keywords:
+                    msg = self.templates.build_cancel()
+                    await self.send_message(event, msg)
+                    return
+    
+    async def _handle_member_management(self, event, user_id, source_group_id):
+        group_data = self.logic.group_manager.get_group_by_source(source_group_id)
+        
+        if not group_data:
+            msg = self.templates.build_error("无反馈组", "当前群未加入任何反馈组")
+            await self.send_message(event, msg)
+            return
+        
+        creator_id = group_data.get("creator_id")
+        if user_id != creator_id:
+            msg = self.templates.build_error("权限不足", "只有创建者可以管理成员")
+            await self.send_message(event, msg)
+            return
+        
+        msg = self.templates.build_member_management_menu()
+        await self.send_message(event, msg)
+        
+        reply = await event.wait_reply(timeout=60)
+        if not reply:
+            msg = self.templates.build_timeout("操作超时，已取消操作")
+            await self.send_message(event, msg)
+            return
+        
+        choice = reply.get_text().strip()
+        
+        if choice == "1":
+            msg = self.templates.build_add_member_prompt("管理员")
+            await self.send_message(event, msg)
+            
+            user_reply = await event.wait_reply(timeout=60)
+            if not user_reply:
+                msg = self.templates.build_timeout("操作超时，已取消操作")
+                await self.send_message(event, msg)
+                return
+            
+            input_text = user_reply.get_text().strip()
+            if input_text.lower() in self.cancel_keywords:
+                msg = self.templates.build_cancel()
+                await self.send_message(event, msg)
+                return
+            
+            # 支持批量添加（逗号分隔）
+            new_admin_ids = [uid.strip() for uid in input_text.split(",") if uid.strip()]
+            if not new_admin_ids:
+                msg = self.templates.build_error("参数错误", "请输入有效的用户ID")
+                await self.send_message(event, msg)
+                return
+            
+            success_ids = []
+            fail_ids = []
+            for new_admin_id in new_admin_ids:
+                success, message = self.logic.group_manager.add_admin(group_data["id"], new_admin_id)
+                if success:
+                    success_ids.append(new_admin_id)
+                else:
+                    fail_ids.append(f"{new_admin_id}({message})")
+            
+            if success_ids:
+                msg = self.templates.build_member_added("管理员", ", ".join(success_ids))
+                if fail_ids:
+                    msg = {
+                        "html": f"""<div style="padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="color: #2e7d32; font-size: 16px; font-weight: bold; margin-bottom: 12px;">部分管理员添加成功</div>
+                            <div style="font-size: 14px; margin-bottom: 8px;">成功: {', '.join(success_ids)}</div>
+                            <div style="font-size: 12px; color: #b71c1c;">失败: {', '.join(fail_ids)}</div>
+                        </div>""",
+                        "markdown": f"**部分管理员添加成功**\n\n成功: {', '.join(success_ids)}\n\n失败: {', '.join(fail_ids)}",
+                        "text": f"部分管理员添加成功\n\n成功: {', '.join(success_ids)}\n失败: {', '.join(fail_ids)}"
+                    }
+            else:
+                msg = self.templates.build_error("添加失败", "; ".join(fail_ids))
+            await self.send_message(event, msg)
+        
+        elif choice == "2":
+            admin_ids = group_data.get("admin_ids", [])
+            if not admin_ids:
+                msg = self.templates.build_error("无管理员", "当前没有管理员可移除")
+                await self.send_message(event, msg)
+                return
+            
+            # 支持输入序号或ID（用逗号分隔多个）
+            msg = self.templates.build_remove_member_prompt("管理员", admin_ids)
+            await self.send_message(event, msg)
+            
+            user_reply = await event.wait_reply(timeout=60)
+            if not user_reply:
+                msg = self.templates.build_timeout("操作超时，已取消操作")
+                await self.send_message(event, msg)
+                return
+            
+            input_text = user_reply.get_text().strip()
+            
+            # 解析输入：支持序号(1,2,3)、ID、或混合
+            remove_ids = []
+            for part in input_text.split(","):
+                part = part.strip()
+                try:
+                    index = int(part) - 1
+                    if 0 <= index < len(admin_ids):
+                        remove_ids.append(admin_ids[index])
+                except ValueError:
+                    if part in admin_ids:
+                        remove_ids.append(part)
+            
+            if not remove_ids:
+                msg = self.templates.build_error("无效的输入", "请输入有效的序号或ID")
+                await self.send_message(event, msg)
+                return
+            
+            success_ids = []
+            for remove_id in remove_ids:
+                success, message = self.logic.group_manager.remove_admin(group_data["id"], remove_id)
+                if success:
+                    success_ids.append(remove_id)
+            
+            msg = self.templates.build_member_removed("管理员", ", ".join(success_ids))
+            await self.send_message(event, msg)
+        
+        elif choice == "3":
+            msg = self.templates.build_add_member_prompt("维护者")
+            await self.send_message(event, msg)
+            
+            user_reply = await event.wait_reply(timeout=60)
+            if not user_reply:
+                msg = self.templates.build_timeout("操作超时，已取消操作")
+                await self.send_message(event, msg)
+                return
+            
+            input_text = user_reply.get_text().strip()
+            if input_text.lower() in self.cancel_keywords:
+                msg = self.templates.build_cancel()
+                await self.send_message(event, msg)
+                return
+            
+            # 支持批量添加（逗号分隔）
+            new_maintainer_ids = [uid.strip() for uid in input_text.split(",") if uid.strip()]
+            if not new_maintainer_ids:
+                msg = self.templates.build_error("参数错误", "请输入有效的用户ID")
+                await self.send_message(event, msg)
+                return
+            
+            success_ids = []
+            fail_ids = []
+            for new_maintainer_id in new_maintainer_ids:
+                success, message = self.logic.group_manager.add_maintainer(group_data["id"], new_maintainer_id)
+                if success:
+                    success_ids.append(new_maintainer_id)
+                else:
+                    fail_ids.append(f"{new_maintainer_id}({message})")
+            
+            if success_ids:
+                if fail_ids:
+                    msg = {
+                        "html": f"""<div style="padding: 16px; border-radius: 8px; text-align: center;">
+                            <div style="color: #2e7d32; font-size: 16px; font-weight: bold; margin-bottom: 12px;">部分维护者添加成功</div>
+                            <div style="font-size: 14px; margin-bottom: 8px;">成功: {', '.join(success_ids)}</div>
+                            <div style="font-size: 12px; color: #b71c1c;">失败: {', '.join(fail_ids)}</div>
+                        </div>""",
+                        "markdown": f"**部分维护者添加成功**\n\n成功: {', '.join(success_ids)}\n\n失败: {', '.join(fail_ids)}",
+                        "text": f"部分维护者添加成功\n\n成功: {', '.join(success_ids)}\n失败: {', '.join(fail_ids)}"
+                    }
+                else:
+                    msg = self.templates.build_member_added("维护者", ", ".join(success_ids))
+            else:
+                msg = self.templates.build_error("添加失败", "; ".join(fail_ids))
+            await self.send_message(event, msg)
+        
+        elif choice == "4":
+            maintainer_ids = group_data.get("maintainer_ids", [])
+            if not maintainer_ids:
+                msg = self.templates.build_error("无维护者", "当前没有维护者可移除")
+                await self.send_message(event, msg)
+                return
+            
+            msg = self.templates.build_remove_member_prompt("维护者", maintainer_ids)
+            await self.send_message(event, msg)
+            
+            user_reply = await event.wait_reply(timeout=60)
+            if not user_reply:
+                msg = self.templates.build_timeout("操作超时，已取消操作")
+                await self.send_message(event, msg)
+                return
+            
+            input_text = user_reply.get_text().strip()
+            
+            # 解析输入：支持序号(1,2,3)、ID、或混合
+            remove_ids = []
+            for part in input_text.split(","):
+                part = part.strip()
+                try:
+                    index = int(part) - 1
+                    if 0 <= index < len(maintainer_ids):
+                        remove_ids.append(maintainer_ids[index])
+                except ValueError:
+                    if part in maintainer_ids:
+                        remove_ids.append(part)
+            
+            if not remove_ids:
+                msg = self.templates.build_error("无效的输入", "请输入有效的序号或ID")
+                await self.send_message(event, msg)
+                return
+            
+            success_ids = []
+            for remove_id in remove_ids:
+                success, message = self.logic.group_manager.remove_maintainer(group_data["id"], remove_id)
+                if success:
+                    success_ids.append(remove_id)
+            
+            msg = self.templates.build_member_removed("维护者", ", ".join(success_ids))
+            await self.send_message(event, msg)
+        
+        elif choice == "5":
+            group_data = self.logic.group_manager.get_group_by_source(source_group_id)
+            msg = self.templates.build_member_list(group_data)
+            await self.send_message(event, msg)
+        
+        else:
+            msg = self.templates.build_error("无效的选择", "请输入1-5的数字")
+            await self.send_message(event, msg)
+
         # 注册全局管理员命令
         await self.register_global_admin_commands()
     
@@ -687,10 +1092,12 @@ JSON 数据
             await self.send_message(event, msg)
             return
         
-        # 检查权限：只有反馈组的创建者可以添加群聊
-        if user_id != group_data["admin_ids"][0]:
+        # 检查权限：只有反馈组的创建者或管理员可以添加群聊
+        creator_id = group_data.get("creator_id")
+        admin_ids = group_data.get("admin_ids", [])
+        if user_id != creator_id and user_id not in admin_ids:
             msg = self.templates.build_error("权限不足", 
-                "只有反馈组的创建者才能添加群聊。请联系反馈组创建者添加此群。")
+                "只有反馈组的创建者或管理员才能添加群聊。请联系反馈组创建者添加此群。")
             await self.send_message(event, msg)
             return
         
@@ -728,10 +1135,12 @@ JSON 数据
             await self.send_message(event, msg)
             return
         
-        # 检查权限：只有反馈组创建者可以配置
-        if user_id != group_data["admin_ids"][0]:
+        # 检查权限：只有反馈组创建者或管理员可以配置
+        creator_id = group_data.get("creator_id")
+        admin_ids = group_data.get("admin_ids", [])
+        if user_id != creator_id and user_id not in admin_ids:
             msg = self.templates.build_error("权限不足", 
-                "只有反馈组的创建者才能配置反馈组")
+                "只有反馈组的创建者或管理员才能配置反馈组")
             await self.send_message(event, msg)
             return
         
@@ -753,13 +1162,19 @@ JSON 数据
             "1": "类别",
             "2": "超时",
             "3": "长度",
-            "4": "前缀"
+            "4": "前缀",
+            "5": "成员"
         }
         
         config_type = config_map.get(choice)
         if not config_type:
-            msg = self.templates.build_error("无效的选择", "请输入1-4的数字")
+            msg = self.templates.build_error("无效的选择", "请输入1-5的数字")
             await self.send_message(event, msg)
+            return
+        
+        # 成员管理单独处理
+        if config_type == "成员":
+            await self._handle_member_management(event, user_id, source_group_id)
             return
         
         # 获取当前值
@@ -827,6 +1242,9 @@ JSON 数据
                 return
             config_updates["id_prefix"] = new_value
         
+        elif config_type == "成员":
+            return
+        
         # 更新配置
         success, message = self.logic.group_manager.update_group_config(
             group_data["id"],
@@ -851,7 +1269,7 @@ JSON 数据
             return
         
         # 检查权限：必须是创建者
-        creator_id = group_data["admin_ids"][0]
+        creator_id = group_data.get("creator_id")
         if user_id != creator_id:
             msg = self.templates.build_error("权限不足", 
                 "只有反馈组创建者才能解散反馈组")
@@ -876,6 +1294,45 @@ JSON 数据
                 return
             
             msg = self.templates.build_group_dissolved(group_data["id"], group_data["name"])
+            await self.send_message(event, msg)
+        else:
+            msg = self.templates.build_cancel()
+            await self.send_message(event, msg)
+    
+    async def _handle_exit_group(self, event, user_id, source_group_id):
+        group_data = self.logic.group_manager.get_group_by_source(source_group_id)
+        
+        if not group_data:
+            msg = self.templates.build_error("无反馈组", "当前群未加入任何反馈组")
+            await self.send_message(event, msg)
+            return
+        
+        # 检查权限：创建者不能退出，只能解散
+        creator_id = group_data.get("creator_id")
+        if user_id == creator_id:
+            msg = self.templates.build_error("权限不足", 
+                "创建者不能退出反馈组，只能解散。如需解散，请选择'解散反馈组'")
+            await self.send_message(event, msg)
+            return
+        
+        # 显示确认信息
+        msg = self.templates.build_exit_confirm(group_data["name"], group_data["id"])
+        await self.send_message(event, msg)
+        
+        # 等待确认
+        confirm_reply = await event.wait_reply(timeout=30)
+        if confirm_reply and confirm_reply.get_text().lower() in self.confirm_keywords:
+            success, message = self.logic.group_manager.remove_group_from_feedback_group(
+                group_data["id"],
+                source_group_id
+            )
+            
+            if not success:
+                msg = self.templates.build_error("操作失败", message)
+                await self.send_message(event, msg)
+                return
+            
+            msg = self.templates.build_group_exited(group_data["name"], group_data["id"])
             await self.send_message(event, msg)
         else:
             msg = self.templates.build_cancel()

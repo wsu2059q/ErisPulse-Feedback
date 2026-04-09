@@ -50,7 +50,7 @@ class Main(BaseModule):
             # 设置默认配置
             default_config = {
                 # 命令配置
-                "commands": ["提交反馈", "反馈列表", "修改状态", "反馈帮助", "设置反馈组", "导出数据", "导入数据"],
+                "commands": ["提交反馈", "反馈列表", "修改状态", "反馈帮助", "设置反馈组", "导出数据", "导入数据", "编辑反馈"],
                 
                 # 全局管理员ID列表
                 "global_admins": [],
@@ -75,9 +75,9 @@ class Main(BaseModule):
             self.logger.info("已创建默认配置")
             return default_config
         
-        # 验证并补充配置
+            # 验证并补充配置
         default_config = {
-            "commands": ["提交反馈", "反馈列表", "修改状态", "反馈帮助", "设置反馈组", "导出数据", "导入数据"],
+            "commands": ["提交反馈", "反馈列表", "修改状态", "反馈帮助", "设置反馈组", "导出数据", "导入数据", "编辑反馈"],
             "default_categories": ["功能", "优化", "建议", "bug"],
             "timeout": 60,
             "max_content_length": 500,

@@ -1,6 +1,6 @@
 [project]
 name = "ErisPulse-Feedback"
-version = "1.0.0"
+version = "1.1.0"
 description = "ErisPulse 反馈系统模块"
 readme = "README.md"
 requires-python = ">=3.10"
