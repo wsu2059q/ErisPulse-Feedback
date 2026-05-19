@@ -633,6 +633,9 @@ JSON 数据
             all_feedbacks = feedback_manager.list_all_feedbacks(feedback_group_id)
             user_feedbacks = [f for f in all_feedbacks if f["user_id"] == user_id]
             
+            status_priority = {"pending": 0, "processing": 1, "completed": 2, "rejected": 3}
+            user_feedbacks.sort(key=lambda f: status_priority.get(f["status"], 99))
+            
             if not user_feedbacks:
                 msg = self.templates.build_error("无反馈", "你还没有提交过任何反馈")
                 await self.send_message(event, msg)
@@ -794,6 +797,20 @@ JSON 数据
                     msg = self.templates.build_cancel()
                     await self.send_message(event, msg)
                     return
+                
+                if len(new_content) > config["max_content_length"]:
+                    msg = self.templates.build_error("内容过长", f"反馈内容不能超过{config['max_content_length']}字")
+                    await self.send_message(event, msg)
+                    return
+                
+                if not new_content:
+                    msg = self.templates.build_error("内容为空", "请输入反馈内容")
+                    await self.send_message(event, msg)
+                    return
+                
+                feedback_manager.update_feedback(feedback_group_id, feedback_id, {"content": new_content})
+                msg = self.templates.build_edit_success(feedback_id)
+                await self.send_message(event, msg)
     
     async def _handle_member_management(self, event, user_id, source_group_id):
         group_data = self.logic.group_manager.get_group_by_source(source_group_id)

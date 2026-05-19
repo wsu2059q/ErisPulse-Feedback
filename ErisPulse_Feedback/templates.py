@@ -1861,56 +1861,95 @@ class FeedbackTemplates:
     
     @classmethod
     def build_user_feedback_list(cls, feedbacks: List[Dict]):
-        """构建用户的反馈列表"""
-        items_html = ""
-        for i, fb in enumerate(feedbacks, 1):
-            status_text = cls._get_status_text(fb["status"])
-            status_bg = cls._get_status_color(fb["status"])
-            time_str = cls._format_time(fb["timestamp"])
-            content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
-            
-            items_html += f"""
+        status_order = ["pending", "processing", "completed", "rejected"]
+        status_groups = {s: [] for s in status_order}
+        for fb in feedbacks:
+            status_groups[fb["status"]].append(fb)
+
+        global_index = 0
+        index_map = {}
+        for status in status_order:
+            for fb in status_groups[status]:
+                index_map[fb["id"]] = global_index
+                global_index += 1
+
+        accordion_html = ""
+        for status_key in status_order:
+            group = status_groups[status_key]
+            if not group:
+                continue
+            status_text = cls._get_status_text(status_key)
+            status_color = {
+                "pending": "#e65100",
+                "processing": "#1565c0",
+                "completed": "#2e7d32",
+                "rejected": "#757575"
+            }[status_key]
+
+            items_html = ""
+            for fb in group:
+                idx = index_map[fb["id"]]
+                content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
+                time_str = cls._format_time(fb["timestamp"])
+                items_html += f"""
 <div style="padding: 10px; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 8px;">
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <span style="font-weight: bold; font-size: 14px;">{i}. {fb['id']}</span>
-        <span style="padding: 2px 8px; background: {status_bg}; font-size: 12px; border-radius: 4px;">{status_text}</span>
+        <span style="font-weight: bold; font-size: 14px;">{idx + 1}. {fb['id']}</span>
+        <span style="font-size: 12px; color: #666;">{time_str}</span>
     </div>
-    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">类别: {fb['category']} | {time_str}</div>
+    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">类别: {fb['category']}</div>
     <div style="font-size: 13px;">{content_preview}</div>
 </div>"""
-        
+
+            accordion_html += f"""
+<div style="margin-bottom: 8px; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden;">
+    <details>
+        <summary style="padding: 10px 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: rgba(21, 101, 192, 0.05);">
+            <span style="font-weight: bold; color: {status_color};">{status_text} ({len(group)}条)</span>
+        </summary>
+        <div style="padding: 10px;">
+            {items_html}
+        </div>
+    </details>
+</div>"""
+
         html = f"""
 <div style="padding: 12px; border-radius: 8px;">
     <div style="color: #1565c0; font-size: 16px; font-weight: bold; margin-bottom: 12px;">我的反馈</div>
-    <div style="font-size: 13px; margin-bottom: 10px;">请选择要编辑的反馈（输入序号）：</div>
-    {items_html}
-    <div style="font-size: 12px; margin-top: 8px;">回复序号选择反馈（60秒内有效）</div>
+    <div style="font-size: 13px; margin-bottom: 10px;">共 {len(feedbacks)} 条反馈，请选择要编辑的反馈：</div>
+    {accordion_html}
+    <div style="font-size: 12px; margin-top: 8px;">回复序号或反馈ID选择（60秒内有效）</div>
 </div>"""
-        
-        md_items = ""
-        for i, fb in enumerate(feedbacks, 1):
-            status_text = cls._get_status_text(fb["status"])
-            content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
-            md_items += f"{i}. **{fb['id']}** - {fb['category']} | {status_text}\n   {content_preview}\n\n"
-        
+
+        md_sections = ""
+        text_sections = ""
+        for status_key in status_order:
+            group = status_groups[status_key]
+            if not group:
+                continue
+            status_text = cls._get_status_text(status_key)
+            md_sections += f"**{status_text}** ({len(group)}条)\n"
+            text_sections += f"{status_text} ({len(group)}条)\n"
+            for fb in group:
+                idx = index_map[fb["id"]]
+                content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
+                status_tag = cls._get_status_text(fb["status"])
+                line = f"{idx + 1}. {fb['id']} - {fb['category']} | {status_tag}\n   {content_preview}"
+                md_sections += line + "\n\n"
+                text_sections += line + "\n\n"
+
         markdown = f"""**我的反馈**
 
-请选择要编辑的反馈（输入序号）：
+共 {len(feedbacks)} 条反馈，请选择要编辑的反馈：
 
-{md_items}回复序号选择反馈（60秒内有效）"""
-        
-        text_items = ""
-        for i, fb in enumerate(feedbacks, 1):
-            status_text = cls._get_status_text(fb["status"])
-            content_preview = fb["content"][:50] + "..." if len(fb["content"]) > 50 else fb["content"]
-            text_items += f"{i}. {fb['id']} - {fb['category']} | {status_text}\n   {content_preview}\n\n"
-        
+{md_sections}回复序号或反馈ID选择（60秒内有效）"""
+
         text = f"""我的反馈
 
-请选择要编辑的反馈（输入序号）：
+共 {len(feedbacks)} 条反馈，请选择要编辑的反馈：
 
-{text_items}回复序号选择反馈（60秒内有效）"""
-        
+{text_sections}回复序号或反馈ID选择（60秒内有效）"""
+
         return {"html": html, "markdown": markdown, "text": text}
     
     @classmethod
